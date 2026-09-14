@@ -8,27 +8,35 @@ import {
 
 const { WOLF, OnlineState } = wolfjs;
 
-// ==================== ⚙️ البيانات الثابتة (عدّل حسب حاجتك) ====================
+// ============================================================
+// ⚙️ الإعدادات
+// ============================================================
+
 const settings = {
-    targetBotId: 51660277,
-    actionWord: "!صيد 3",
-    delayBetweenHeists: 11000,      // 11 ثانية فاصل بين الصيد
-    workDuration: 54 * 60 * 1000,   // 54 دقيقة عمل
-    restDuration: 6 * 60 * 1000     // 6 دقائق راحة
+
+    // البوت الذي نراقب رسائله الخاصة
+    gateA: 80277459,
+
+    // الروم الذي نرسل إليه الأمر
+    gateB: 224,
+
+    // النص الذي نبحث عنه داخل رسالة gateA
+    trigger: "Your animal is back to full energy!",
+
+    // الأمر الذي سيتم إرساله إلى gateB
+    action: "!س جلد خاص 80055399",
+
+    // معرف حساب البوت الحالي
+    myId: "80055399"
 };
-// =============================================================================
 
 // ============================================================
-// متغيرات الاتصال
+// ⚙️ متغيرات الاتصال
 // ============================================================
 
 let service = null;
 let socket = null;
 let browserClosed = false;
-
-let heistQueue = [];
-let isProcessing = false;
-let isResting = false;
 
 // ============================================================
 // أدوات مساعدة
@@ -79,7 +87,6 @@ async function shutdown(code = 0) {
             '⚠️ تعذر إغلاق جلسة Chrome:',
             err?.message || err
         );
-
     }
 
     console.log(
@@ -97,8 +104,7 @@ async function waitForSubscriber(
     timeoutMs = 60000
 ) {
 
-    const started =
-        Date.now();
+    const started = Date.now();
 
     console.log(
         '⏳ انتظار Authorization...'
@@ -164,7 +170,7 @@ async function initializeHandlers() {
 }
 
 // ============================================================
-// الاتصال باستخدام Google Chrome Profile
+// الاتصال باستخدام Chrome Profile
 // ============================================================
 
 async function connectUsingChromeProfile(
@@ -231,6 +237,7 @@ async function connectUsingChromeProfile(
     service.config.framework.login.token =
         token;
 
+    // الحالة = Invisible
     service.config.framework.login.onlineState =
         OnlineState.INVISIBLE;
 
@@ -284,49 +291,52 @@ async function connectUsingChromeProfile(
         `📱 Device: ${connectionDevice}`
     );
 
+    console.log(
+        '👻 Online State: INVISIBLE'
+    );
+
     // ========================================================
     // Socket.IO
     // ========================================================
 
-    socket =
-        io(
-            `${host}:${port}`,
-            {
-                transports: [
-                    'websocket'
-                ],
+    socket = io(
+        `${host}:${port}`,
+        {
+            transports: [
+                'websocket'
+            ],
 
-                reconnection: true,
+            reconnection: true,
 
-                autoConnect: false,
+            autoConnect: false,
 
-                query: {
+            query: {
 
-                    token,
+                token,
 
-                    device:
-                        connectionDevice,
+                device:
+                    connectionDevice,
 
-                    state:
-                        service.config.framework
-                            .login.onlineState,
+                state:
+                    service.config.framework
+                        .login.onlineState,
 
-                    version:
-                        connection?.version ||
-                        undefined,
+                version:
+                    connection?.version ||
+                    undefined,
 
-                    isAppCheckEnabled:
-                        isAppCheckEnabled
-                            ? 'true'
-                            : 'false',
+                isAppCheckEnabled:
+                    isAppCheckEnabled
+                        ? 'true'
+                        : 'false',
 
-                    appCheckToken:
-                        isAppCheckEnabled
-                            ? appCheckToken
-                            : undefined
-                }
+                appCheckToken:
+                    isAppCheckEnabled
+                        ? appCheckToken
+                        : undefined
             }
-        );
+        }
+    );
 
     service.websocket.socket =
         socket;
@@ -341,14 +351,20 @@ async function connectUsingChromeProfile(
 
             console.log('');
             console.log('========================================');
+
             console.log(
                 '🔗 تم الاتصال بـ WOLF Socket.IO'
             );
+
             console.log(
                 `🔗 Connection ID: ${socket.id}`
             );
-            console.log('========================================');
 
+            console.log(
+                '👻 الحالة: Invisible'
+            );
+
+            console.log('========================================');
         }
     );
 
@@ -364,7 +380,6 @@ async function connectUsingChromeProfile(
                 '❌ Connection error:',
                 error?.message || error
             );
-
         }
     );
 
@@ -379,12 +394,11 @@ async function connectUsingChromeProfile(
             console.log(
                 `🔌 Connection closed: ${reason}`
             );
-
         }
     );
 
     // ========================================================
-    // تمرير أحداث WOLF إلى Handlers (بما فيها الرسائل)
+    // تمرير أحداث WOLF إلى Handlers
     // ========================================================
 
     socket.onAny(
@@ -399,7 +413,6 @@ async function connectUsingChromeProfile(
                     eventName ===
                     'group event update'
                 ) {
-
                     return;
                 }
 
@@ -421,9 +434,7 @@ async function connectUsingChromeProfile(
                     `❌ Handler error [${eventName}]:`,
                     error?.message || error
                 );
-
             }
-
         }
     );
 
@@ -460,108 +471,268 @@ async function connectUsingChromeProfile(
 }
 
 // ============================================================
-// معالجة طابور الصيد
+// إرسال الأمر إلى الروم
 // ============================================================
 
-const processQueue = async () => {
+async function executeAction() {
 
-    if (isProcessing || heistQueue.length === 0 || isResting) return;
+    try {
 
-    isProcessing = true;
+        console.log(
+            '🎯 محاولة تنفيذ الإرسال...'
+        );
 
-    while (heistQueue.length > 0 && !isResting) {
+        await service.messaging.sendGroupMessage(
+            settings.gateB,
+            settings.action
+        );
 
-        const roomId = heistQueue.shift();
+        console.log(
+            `🚀 تم الإرسال بنجاح إلى [${settings.gateB}]`
+        );
 
-        console.log(`⏳ انتظار الاستراحة بين الصيد... الروم: ${roomId}`);
-        await sleep(settings.delayBetweenHeists);
+    } catch (err) {
 
-        if (isResting) {
-            heistQueue.unshift(roomId);
-            break;
-        }
-
-        try {
-
-            // نظام فحص إصدار المكتبة للانضمام للروم
-            if (service.groups && typeof service.groups.join === 'function') {
-                await service.groups.join(roomId).catch(() => {});
-            } else if (service.group && typeof service.group.join === 'function') {
-                await service.group.join(roomId).catch(() => {});
-            } else if (typeof service.joinGroup === 'function') {
-                await service.joinGroup(roomId).catch(() => {});
-            }
-
-            // إرسال رسالة الصيد
-            await service.messaging.sendGroupMessage(roomId, settings.actionWord);
-            console.log(`🚀 [${new Date().toLocaleTimeString('ar-SA')}] تم الصيد في [${roomId}]. المتبقي في الطابور: ${heistQueue.length}`);
-
-        } catch (err) {
-
-            console.error(`❌ فشل الصيد في الروم ${roomId}: ${err.message}`);
-        }
+        console.error(
+            '❌ فشل الإرسال:',
+            err?.message || err
+        );
     }
-
-    isProcessing = false;
-};
+}
 
 // ============================================================
-// نظام إدارة الوقت (54/6)
+// إرسال أمر التدريب عند بدء التشغيل
 // ============================================================
 
-const manageWorkCycle = async () => {
+async function sendTrainingCommand() {
 
-    while (true) {
+    try {
 
-        console.log("🟢 [نظام الوقت] بدأت دورة الـ 54 دقيقة عمل.");
-        isResting = false;
-        processQueue();
+        await service.messaging.sendPrivateMessage(
+            settings.gateA,
+            '!س تدريب كل 1'
+        );
 
-        await sleep(settings.workDuration);
+        console.log(
+            `✉️ تم إرسال أمر التدريب إلى [${settings.gateA}]`
+        );
 
-        console.log("🛑 [نظام الوقت] بدأت دورة الـ 6 دقائق راحة. يتوقف الصيد مؤقتاً.");
-        isResting = true;
+    } catch (err) {
 
-        await sleep(settings.restDuration);
+        console.error(
+            '❌ فشل إرسال أمر التدريب:',
+            err?.message || err
+        );
     }
-};
+}
 
 // ============================================================
-// مراقبة الرسائل الخاصة من البوت المستهدف
+// مراقبة الرسائل الخاصة
 // ============================================================
 
-function attachMessageListener() {
+function attachPrivateMessageListener() {
 
-    service.on('message', async (message) => {
+    service.on(
+        'message',
+        async message => {
 
-        // التقاط رسائل الصيد من البوت المستهدف
-        if (!message.isGroup && (message.sourceSubscriberId === settings.targetBotId || message.authorId === settings.targetBotId)) {
+            try {
 
-            const content = message.body || message.content || "";
-
-            // المحاولة الأولى: البحث بالطريقة الإنجليزية (ID + رقم)
-            let match = content.match(/\(ID\s*(\d+)\)/);
-
-            // إذا لم يجد شيئاً، المحاولة الثانية: البحث بالطريقة العربية مع تجاهل أي رموز مخفية قبل الرقم
-            if (!match) {
-                match = content.match(/\[.*?\]\s*\(\s*[\s\u200B]*(\d+)/);
-            }
-
-            if (match && match[1]) {
-
-                const roomId = parseInt(match[1]);
-                console.log(`📥 إضافة الروم ${roomId} إلى الطابور...`);
-
-                heistQueue.push(roomId);
-
-                if (!isResting) {
-                    processQueue();
-                } else {
-                    console.log(`⏳ استراحة حالياً. سيتم معالجة الروم ${roomId} فور العودة للعمل.`);
+                // نتأكد أنها رسالة خاصة
+                if (message.isGroup) {
+                    return;
                 }
+
+                const senderId =
+                    message.authorId ||
+                    message.sourceSubscriberId;
+
+                const text =
+                    message.content ||
+                    message.body ||
+                    '';
+
+                console.log(
+                    `📩 Private message | ${senderId}: ${text}`
+                );
+
+                if (
+                    String(senderId) ===
+                    String(settings.gateA)
+                ) {
+
+                    if (
+                        text.includes(
+                            settings.trigger
+                        )
+                    ) {
+
+                        console.log(
+                            '⚡ رصد رسالة الطاقة! جاري التنفيذ...'
+                        );
+
+                        await executeAction();
+                    }
+                }
+
+            } catch (err) {
+
+                console.error(
+                    '❌ خطأ في معالجة الرسالة الخاصة:',
+                    err?.message || err
+                );
             }
         }
-    });
+    );
+}
+
+// ============================================================
+// مراقبة رسائل الروم
+// ============================================================
+
+function attachGroupMessageListener() {
+
+    service.on(
+        'message',
+        async message => {
+
+            try {
+
+                if (!message.isGroup) {
+                    return;
+                }
+
+                const groupId =
+                    message.targetGroupId ||
+                    message.groupId ||
+                    message.group?.id;
+
+                const text =
+                    message.content ||
+                    message.body ||
+                    '';
+
+                if (
+                    String(groupId) !==
+                    String(settings.gateB)
+                ) {
+                    return;
+                }
+
+                if (
+                    !text.includes(
+                        'ما زال السباق جاريًا'
+                    )
+                ) {
+                    return;
+                }
+
+                if (
+                    !text.includes(
+                        settings.myId
+                    )
+                ) {
+                    return;
+                }
+
+                const match =
+                    text.match(/\d+/);
+
+                const waitSeconds =
+                    match
+                        ? parseInt(match[0], 10)
+                        : 25;
+
+                console.log(
+                    `⚠️ السباق جارٍ لـ [${settings.myId}]. انتظار ${waitSeconds} ثانية...`
+                );
+
+                setTimeout(
+                    async () => {
+
+                        console.log(
+                            '🔄 انتهى الوقت. إعادة محاولة التنفيذ الآن...'
+                        );
+
+                        await executeAction();
+
+                    },
+                    (waitSeconds + 1) * 1000
+                );
+
+            } catch (err) {
+
+                console.error(
+                    '❌ خطأ في معالجة رسالة الروم:',
+                    err?.message || err
+                );
+            }
+        }
+    );
+}
+
+// ============================================================
+// تهيئة المهام بعد Authorization
+// ============================================================
+
+async function initializeTasks() {
+
+    console.log('');
+    console.log('========================================');
+    console.log('⚙️ تهيئة مهام البوت');
+    console.log('========================================');
+
+    console.log(
+        `🎯 Gate A: ${settings.gateA}`
+    );
+
+    console.log(
+        `🏠 Gate B: ${settings.gateB}`
+    );
+
+    console.log(
+        `🔎 Trigger: ${settings.trigger}`
+    );
+
+    console.log(
+        `⚡ Action: ${settings.action}`
+    );
+
+    console.log(
+        `🆔 My ID: ${settings.myId}`
+    );
+
+    // الحالة تبقى Invisible
+    try {
+
+        await service.setOnlineState(
+            OnlineState.INVISIBLE
+        );
+
+        console.log(
+            '👻 تم ضبط الحالة إلى Invisible'
+        );
+
+    } catch (err) {
+
+        console.log(
+            '⚠️ تعذر ضبط الحالة عبر API:',
+            err?.message || err
+        );
+    }
+
+    // مراقبة الرسائل
+    attachPrivateMessageListener();
+
+    attachGroupMessageListener();
+
+    // إرسال أمر التدريب
+    await sendTrainingCommand();
+
+    console.log('');
+    console.log(
+        '🟢 جميع المهام أصبحت فعالة.'
+    );
 }
 
 // ============================================================
@@ -572,7 +743,7 @@ async function main() {
 
     console.log('');
     console.log('========================================');
-    console.log('🐺 WOLF Heist Watcher');
+    console.log('🐺 WOLF Bot');
     console.log('🐺 wolf.js 2.7.10');
     console.log('========================================');
     console.log('');
@@ -580,7 +751,7 @@ async function main() {
     try {
 
         // ====================================================
-        // 1. قراءة Google Chrome Profile
+        // 1. قراءة جلسة Chrome
         // ====================================================
 
         console.log(
@@ -601,7 +772,9 @@ async function main() {
             '✅ تم العثور على توكن WOLF'
         );
 
-        if (credentials.appCheckToken) {
+        if (
+            credentials.appCheckToken
+        ) {
 
             console.log(
                 `🛡️ AppCheck length: ${
@@ -627,7 +800,7 @@ async function main() {
         );
 
         // ====================================================
-        // 2. الاتصال باستخدام Chrome Profile
+        // 2. الاتصال
         // ====================================================
 
         await connectUsingChromeProfile(
@@ -635,22 +808,16 @@ async function main() {
         );
 
         // ====================================================
-        // 3. تفعيل مراقبة الرسائل الخاصة
+        // 3. تنفيذ المهام
         // ====================================================
 
-        attachMessageListener();
+        await initializeTasks();
 
-        console.log(
-            `👂 جاري مراقبة رسائل البوت المستهدف (${settings.targetBotId})...`
-        );
-
-        // ====================================================
-        // 4. بدء دورة العمل/الراحة (54/6)
-        // ====================================================
-
-        manageWorkCycle();
-
-        // البرنامج يبقى شغال إلى أن يتم إيقافه يدويًا (SIGINT/SIGTERM)
+        console.log('');
+        console.log('========================================');
+        console.log('🟢 البوت يعمل الآن');
+        console.log('👻 الحالة: Invisible');
+        console.log('========================================');
 
     } catch (err) {
 
@@ -670,16 +837,22 @@ async function main() {
 }
 
 // ============================================================
-// إيقاف
+// إيقاف آمن
 // ============================================================
 
-process.on('SIGINT', async () => {
-    await shutdown(0);
-});
+process.on(
+    'SIGINT',
+    async () => {
+        await shutdown(0);
+    }
+);
 
-process.on('SIGTERM', async () => {
-    await shutdown(0);
-});
+process.on(
+    'SIGTERM',
+    async () => {
+        await shutdown(0);
+    }
+);
 
 // ============================================================
 // START
