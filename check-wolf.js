@@ -119,7 +119,6 @@ async function connectUsingGitHubTokens(credentials) {
     const token = credentials?.token;
     const appCheckToken = credentials?.appCheckToken || '';
     const deviceToken = credentials?.deviceToken || '';
-    const device = credentials?.device || 'web';
 
     const isAppCheckEnabled = Boolean(
         credentials?.isAppCheckEnabled ?? appCheckToken
@@ -142,8 +141,7 @@ async function connectUsingGitHubTokens(credentials) {
     if (deviceToken) {
         console.log(`📱 DeviceToken length: ${deviceToken.length}`);
     }
-    console.log(`📱 Device: ${device}`);
-    console.log(`🛡️ App Check: ${isAppCheckEnabled ? 'enabled' : 'disabled'}`);
+    console.log('🛡️ App Check: ' + (isAppCheckEnabled ? 'enabled' : 'disabled'));
     console.log('========================================');
 
     // ========================================================
@@ -171,7 +169,9 @@ async function connectUsingGitHubTokens(credentials) {
     const connection = service._frameworkConfig?.get?.('connection');
     const host = connection?.host || 'https://v3-rc.palringo.com';
     const port = connection?.port ?? 443;
-    const connectionDevice = connection?.query?.device || device || 'web';
+
+    // ★★★ الحل: نجبر device = 'web' بدل wjsframework
+    const connectionDevice = 'web';
 
     console.log('');
     console.log('========================================');
@@ -431,8 +431,6 @@ async function main() {
                 `📱 DeviceToken length: ${credentials.deviceToken.length}`
             );
         }
-
-        console.log(`📱 Device: ${credentials.device || 'web'}`);
 
         // ====================================================
         // 2. الاتصال
